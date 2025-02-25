@@ -11,7 +11,7 @@ from tensorflow.keras.models import load_model
 genai.configure(api_key="YOUR_GEMINI_API_KEY")
 
 # Load Emotion Detection Model
-model_path = r'C:\Users\Asus\Desktop\c\ai\emotion_model.h5'  # Use the correct path
+model_path = 'models/emotion_detection.h5'  # Use the correct path
 emotion_model = load_model(model_path)
 
 # Emotion Labels
