@@ -6,12 +6,15 @@ import cv2
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import load_model
+import noisereduce as nr
+import soundfile as sf
+from pocketsphinx import LiveSpeech
 
 # Set up Gemini API Key
 genai.configure(api_key="YOUR_GEMINI_API_KEY")
 
 # Load Emotion Detection Model
-model_path = 'models/emotion_detection.h5'  # Use the correct path
+model_path = r'C:\Users\Asus\Desktop\c\ai\emotion_model.h5'  # Use the correct path
 emotion_model = load_model(model_path)
 
 # Emotion Labels
@@ -63,37 +66,69 @@ def detect_emotion():
     return dominant_emotion
 
 # Function to listen to microphone input
-def listen():
+def listen(language="en-US"):
     recognizer = sr.Recognizer()
+
+    # Step 1: Wake Word Detection
+    print("🎙️ Say 'Hey' to activate...")
+    for phrase in LiveSpeech():  # Continuously listen for the wake word
+        if "hey" in str(phrase).lower():  # Wake word detected
+            print("🎤 Wake word detected! AI is listening...")
+            break
+
+    # Step 2: Capture Audio with Noise Cancellation
     with sr.Microphone() as source:
-        print("🎙️ Say 'Hey' to activate...")
-        recognizer.adjust_for_ambient_noise(source)
-        
-        try:
-            audio = recognizer.listen(source, timeout=5)
-            text = recognizer.recognize_google(audio).lower()
-            print("🗣️ You said:", text)
+        recognizer.adjust_for_ambient_noise(source)  # Adjust for ambient noise
+        print("🎤 Say something...")
+        audio = recognizer.listen(source, timeout=10)  # Capture audio
 
-            if "hey" in text:
-                print("🎤 AI is listening... Say something...")
-                audio = recognizer.listen(source, timeout=10)
-                user_input = recognizer.recognize_google(audio)
-                print("🗣️ You said:", user_input)
-                
-                # Detect emotion after greeting
-                detected_emotion = detect_emotion()
-                emotion_response = f"You look {detected_emotion.lower()}, how can I help?"
-                
-                # Get AI response
-                full_input = user_input + " " + emotion_response
-                response = get_gemini_response(full_input)
-                print("🤖 AI:", response)
-                speak(response)
-                
-        except sr.UnknownValueError:
-            print("🤔 Could not understand.")
-        except sr.RequestError:
-            print("⚠️ Speech recognition error.")
+        # Convert AudioData to numpy array for noise reduction
+        audio_data = np.frombuffer(audio.get_raw_data(), dtype=np.int16)
+        reduced_noise = nr.reduce_noise(y=audio_data, sr=audio.sample_rate)
 
-# Run the voice assistant
-listen()
+        # Save the reduced noise audio to a temporary file
+        sf.write("temp.wav", reduced_noise, audio.sample_rate)
+        with sr.AudioFile("temp.wav") as source:
+            cleaned_audio = recognizer.record(source)  # Load cleaned audio
+
+    # Step 3: Speech Recognition with Multi-Language Support
+    try:
+        user_input = recognizer.recognize_google(cleaned_audio, language=language)
+        print("🗣️ You said:", user_input)
+
+        # Step 4: Detect Emotion
+        detected_emotion = detect_emotion()
+        emotion_response = f"You look {detected_emotion.lower()}, how can I help?"
+
+        # Step 5: Get AI Response
+        full_input = user_input + " " + emotion_response
+        response = get_gemini_response(full_input)
+        print("🤖 AI:", response)
+        speak(response)
+
+    except sr.UnknownValueError:
+        print("🤔 Could not understand.")
+    except sr.RequestError:
+        print("⚠️ Speech recognition error.")
+
+# Language Selection
+languages = {
+    "English": "en-US",
+    "Spanish": "es-ES",
+    "French": "fr-FR",
+    "German": "de-DE",
+    "Chinese": "zh-CN",
+    "Arabic (Saudi Arabia)": "ar-SA",
+    "Arabic (Egypt)": "ar-EG", 
+    
+}
+print("Select a language:")
+for lang in languages:
+    print(f"- {lang}")
+selected_lang = input("Enter language: ")
+
+if selected_lang in languages:
+    listen(language=languages[selected_lang])
+else:
+    print("⚠️ Unsupported language. Defaulting to English.")
+    listen()
