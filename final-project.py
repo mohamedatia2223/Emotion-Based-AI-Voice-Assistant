@@ -1,20 +1,19 @@
 import google.generativeai as genai
 import speech_recognition as sr
-from gtts import gTTS
-import os
 import cv2
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import load_model
 import noisereduce as nr
 import soundfile as sf
-from pocketsphinx import LiveSpeech
+from pocketsphinx import LiveSpeech 
+from utils.TTS  import TTS
 
 # Set up Gemini API Key
 genai.configure(api_key="YOUR_GEMINI_API_KEY")
 
 # Load Emotion Detection Model
-model_path = r'C:\Users\Asus\Desktop\c\ai\emotion_model.h5'  # Use the correct path
+model_path = r'models/emotion_detection_CNN.h5'  # Use the correct path
 emotion_model = load_model(model_path)
 
 # Emotion Labels
@@ -32,9 +31,8 @@ def get_gemini_response(user_input):
 
 # Function to convert text to speech
 def speak(text):
-    tts = gTTS(text=text, lang="en")
-    tts.save("response.mp3")
-    os.system("start response.mp3")
+    tts = TTS(lang="en")
+    tts.speak(text)
 
 # Function to capture face and detect emotion
 def detect_emotion():

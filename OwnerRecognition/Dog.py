@@ -1,35 +1,38 @@
 import cv2
 import face_recognition
-import os
 import pyodbc
+import base64
+import numpy as np
+from io import BytesIO
+from PIL import Image
+
 
 # إعدادات قاعدة البيانات
 DB_CONNECTION_STRING = "DRIVER={ODBC Driver 17 for SQL Server};SERVER=NONAME;DATABASE=Person_Details;Trusted_Connection=yes;"
-
-# مسار مجلد الصور المخزنة
-IMAGE_FOLDER = r"C:\\Users\\MF\\Desktop\\owners_images"
 
 # فتح الاتصال بقاعدة البيانات
 conn = pyodbc.connect(DB_CONNECTION_STRING)
 cursor = conn.cursor()
 
-def get_person_details(cursor, file_name):
-    """جلب اسم وعمر الشخص من قاعدة البيانات بناءً على اسم الصورة"""
-    query = "SELECT Name, Age FROM owners WHERE LOWER(image_path) LIKE LOWER(?)"
-    cursor.execute(query, ('%' + file_name,))
-    return cursor.fetchone()
-
-# تحميل الصور وتحميل الترميزات (face encodings) من المجلد
-known_faces = {}
-for file_name in os.listdir(IMAGE_FOLDER):
-    file_path = os.path.join(IMAGE_FOLDER, file_name)
+def load_known_faces(cursor):
+    """تحميل بيانات الأشخاص المخزنة في قاعدة البيانات وتحويل الصور من Base64 إلى ترميزات وجه"""
+    known_faces = {}
     
-    # التأكد من أن الملف هو صورة (ملفات .jpg أو .png مثلاً)
-    if os.path.isfile(file_path) and (file_name.endswith('.jpg') or file_name.endswith('.png')):
-        image = face_recognition.load_image_file(file_path)
+    cursor.execute("SELECT Name, Age, ImageBase64 FROM owners")
+    for name, age, image_base64 in cursor.fetchall():
+        
+        image_data = base64.b64decode(image_base64)
+        image = np.array(Image.open(BytesIO(image_data)))
+        
+        # استخلاص ترميز الوجه
         encodings = face_recognition.face_encodings(image)
         if encodings:
-            known_faces[file_name] = encodings[0]  # حفظ الترميز
+            known_faces[name] = (encodings[0], age)  # حفظ الاسم، الترميز، والعمر
+    
+    return known_faces
+
+# تحميل الصور وترميزات الوجوه من قاعدة البيانات
+known_faces = load_known_faces(cursor)
 
 # فتح الكاميرا
 video_capture = cv2.VideoCapture(0)
@@ -48,24 +51,21 @@ while True:
 
     # مقارنة الوجوه الموجودة بالكاميرا مع الصور المخزنة
     for face_encoding, face_location in zip(face_encodings, face_locations):
-        matches = face_recognition.compare_faces(list(known_faces.values()), face_encoding)
-        face_distance = face_recognition.face_distance(list(known_faces.values()), face_encoding)
+        matches = face_recognition.compare_faces([data[0] for data in known_faces.values()], face_encoding)
+        face_distances = face_recognition.face_distance([data[0] for data in known_faces.values()], face_encoding)
 
-        # إذا تم العثور على تطابق، نعرض البيانات
         if True in matches:
-            first_match_index = matches.index(True)
-            file_name = list(known_faces.keys())[first_match_index]
-            person_details = get_person_details(cursor, file_name)
+            best_match_index = matches.index(True)
+            name = list(known_faces.keys())[best_match_index]
+            age = known_faces[name][1]
 
-            if person_details:
-                name, age = person_details
-                print(f"تم التعرف على: {name}, العمر: {age}")
+            print(f"تم التعرف على: {name}, العمر: {age}")
 
-                # عرض الاسم والعمر على الشاشة
-                top, right, bottom, left = face_location
-                cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-                display_text = f"{name}, {age} Age"
-                cv2.putText(frame, display_text, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            # عرض الاسم والعمر على الشاشة
+            top, right, bottom, left = face_location
+            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+            display_text = f"{name}, {age} Age"
+            cv2.putText(frame, display_text, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
     # عرض الفيديو
     cv2.imshow("Camera", frame)
